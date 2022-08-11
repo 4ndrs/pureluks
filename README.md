@@ -2,7 +2,7 @@
 
 Simple cryptsetup wrapper for LUKS image files.
 
-# Installation
+## Installation
 
 ```
 pip install pureluks
