@@ -20,7 +20,7 @@ class PureLUKS:
     ):
         self.image_file = pathlib.Path(image_file)
         self.key_file = pathlib.Path(key_file)
-        self.mapper = pathlib.Path("/dev/mapper") / mapper_name
+        self.mapper = mapper_name
         self.mount_path = pathlib.Path(mount_path)
 
         # Test that all paths exist, and that the mapper is not in use
@@ -41,9 +41,6 @@ class PureLUKS:
         if not self.mount_path.is_dir():
             raise NotADirectoryError(f"{self.mount_path} is not a directory.")
 
-        if self.mapper.exists():
-            raise FileExistsError(f"{self.mapper} already does exist.")
-
         # The following will raise an exception if cryptsetup is not found
         crypt_test = subprocess.check_output(  # nosec
             ["cryptsetup", "-V"]
@@ -54,6 +51,22 @@ class PureLUKS:
                 f"Cryptsetup returned an invalid output: {crypt_test}"
             )
 
+        # ['/dev/mapper/mapper_name', 'is', 'inactive.', ...]
+        mapper_path, _, mapper_status, *_ = (
+            subprocess.run(  # nosec
+                ["cryptsetup", "status", self.mapper],
+                check=False,
+                capture_output=True,
+            )
+            .stdout.decode()
+            .strip()
+            .split()
+        )
+
+        if mapper_status != "inactive.":
+            raise FileExistsError(f"{mapper_path} is in use.")
+
+        self.mapper_path = pathlib.Path(mapper_path)
         self.opened = False
         self.mounted = False
 
@@ -68,7 +81,7 @@ class PureLUKS:
                     self.key_file,
                     "luksOpen",
                     self.image_file,
-                    self.mapper.name,
+                    self.mapper,
                 ]
             )
             self.opened = True
@@ -84,7 +97,7 @@ class PureLUKS:
 
         if self.opened:
             subprocess.check_output(  # nosec
-                ["cryptsetup", "luksClose", self.mapper.name]
+                ["cryptsetup", "luksClose", self.mapper]
             )
             self.opened = False
 
@@ -93,10 +106,10 @@ class PureLUKS:
     def mount(self):
         """Mounts the mapper into path. Raises FileNotFoundError if the mapper
         is not set up. Does nothing if already mounted."""
-        if not self.mapper.exists():
+        if not self.opened:
             raise FileNotFoundError(
-                f"The mapper, {self.mapper}, does not exist. Consider opening "
-                "the image before mounting."
+                f"The mapper, {self.mapper_path}, does not exist. Consider "
+                "opening the image before mounting."
             )
 
         if not self.mounted:
@@ -105,7 +118,7 @@ class PureLUKS:
                     "mount",
                     "-o",
                     "defaults,relatime",
-                    self.mapper,
+                    self.mapper_path,
                     self.mount_path,
                 ]
             )
@@ -135,7 +148,7 @@ class PureLUKS:
 
     def __str__(self):
         return (
-            f"PureLUKS('Mapper:     {self.mapper.absolute()}\n"
+            f"PureLUKS('Mapper:     {self.mapper_path.absolute()}\n"
             f"          Image:      {self.image_file.absolute()}\n"
             f"          Key:        {self.key_file.absolute()}\n"
             f"          Mount path: {self.mount_path.absolute()}\n"
