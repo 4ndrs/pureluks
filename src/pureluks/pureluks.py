@@ -140,12 +140,6 @@ class PureLUKS:
     def __exit__(self, exec_type, exc_value, traceback):
         self.close()
 
-    def __del__(self):
-        try:
-            self.close()
-        except AttributeError:
-            pass  # if __init__() never ran, self.mounted won't be defined
-
     def __str__(self):
         return (
             f"PureLUKS('Mapper:     {self.mapper_path.absolute()}\n"
